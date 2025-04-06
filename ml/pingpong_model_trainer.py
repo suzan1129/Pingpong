@@ -81,7 +81,7 @@ def preprocess_data(all_game_data, target_side):
 
 def train_model(features, labels):
     """訓練 KNN 模型並評估準確率 (使用固定的 n_neighbors=5)。"""
-    N_NEIGHBORS = 5 # <--- 直接在這裡設定 K 值
+    N_NEIGHBORS = 9 # <--- 直接在這裡設定 K 值
 
     if features.shape[0] < N_NEIGHBORS * 2:
         print(f"錯誤: 數據不足 ({features.shape[0]}) 無法使用 n_neighbors={N_NEIGHBORS} 進行訓練。")
