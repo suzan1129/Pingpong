@@ -69,9 +69,9 @@ class MLPlay:
         # else: predicted_center remains None
 
         if predicted_center is not None:
-            if my_platform_center < predicted_center - 3:
+            if my_platform_center < predicted_center - 2:
                 command = "MOVE_RIGHT"
-            elif my_platform_center > predicted_center + 3:
+            elif my_platform_center > predicted_center + 2:
                 command = "MOVE_LEFT"
             else:
                 command = "NONE"
