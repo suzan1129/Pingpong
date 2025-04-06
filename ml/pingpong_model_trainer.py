@@ -32,79 +32,89 @@ def load_data_from_pickle(folder_path):
     return all_data
 
 def preprocess_data(all_game_data, target_side):
-    """Extracts features and labels from the loaded game data for the target side."""
+    """從載入的遊戲數據中為目標玩家提取特徵和標籤。"""
     features = []
     labels = []
 
     command_map = {"MOVE_LEFT": 0, "MOVE_RIGHT": 1, "NONE": 2}
-    feature_keys = [ # Define the exact order of features
+
+    # --- 關鍵修改：定義包含所有 9 個特徵的鍵名和順序 ---
+    feature_keys = [
         "ball_x", "ball_y", "ball_speed_x", "ball_speed_y",
-        "platform_1P_x", "platform_2P_x", "blocker_x", "predicted_center_calc"
+        "platform_1P_x", "platform_2P_x", "blocker_x",
+        "predicted_center_calc",
+        "blocker_speed_x" # <--- 確保包含這個新特徵
     ]
 
-
-    print(f"Preprocessing data for side: {target_side}...")
-    count = 0
+    print(f"為玩家 {target_side} 預處理數據...")
+    valid_data_count = 0
     for item in all_game_data:
-         # Ensure the item is a dictionary and contains 'side' and 'features'
          if isinstance(item, dict) and item.get('side') == target_side and 'features' in item and 'command' in item:
             feat_dict = item['features']
             command = item['command']
 
-            # Check if all feature keys exist
+            # 檢查是否包含所有必需的特徵鍵
             if all(key in feat_dict for key in feature_keys):
-                 # Extract features in the defined order
-                feature_vector = [feat_dict[key] for key in feature_keys]
-                features.append(feature_vector)
+                 # 按照 feature_keys 定義的順序提取特徵值
+                 try:
+                     # 確保提取的值是數值型
+                     feature_vector = [float(feat_dict[key]) for key in feature_keys]
+                     features.append(feature_vector)
 
-                if command in command_map:
-                    labels.append(command_map[command])
-                    count += 1
-                # else: Ignore data points with invalid commands (like SERVE)
+                     if command in command_map:
+                         labels.append(command_map[command])
+                         valid_data_count += 1
+                     # else: 忽略無效指令
+                 except (TypeError, ValueError) as e:
+                      print(f"警告: 提取特徵時跳過無效數據點: {e}, data={feat_dict}")
+                      pass # 跳過無法轉換為 float 的數據
+            # else:
+            #      print(f"警告: 跳過缺失特徵的數據點: {feat_dict.keys()}")
 
     if not features:
-         print("Error: No valid features extracted. Check data format and feature keys.")
+         print("錯誤: 未能提取任何有效特徵。請檢查數據格式和 feature_keys。")
          return np.array([]), np.array([])
 
-    print(f"Preprocessing complete. Extracted {count} valid data points for {target_side}.")
+    print(f"預處理完成。為玩家 {target_side} 提取了 {valid_data_count} 個有效數據點。")
     return np.array(features), np.array(labels)
 
-def train_model(features, labels, n_neighbors=5):
-    """Trains a KNN model and evaluates its accuracy."""
-    if features.shape[0] < n_neighbors * 2: # Need enough data for split and neighbors
-        print(f"Error: Not enough data ({features.shape[0]}) to train with n_neighbors={n_neighbors}.")
+
+def train_model(features, labels):
+    """訓練 KNN 模型並評估準確率 (使用固定的 n_neighbors=5)。"""
+    N_NEIGHBORS = 5 # <--- 直接在這裡設定 K 值
+
+    if features.shape[0] < N_NEIGHBORS * 2:
+        print(f"錯誤: 數據不足 ({features.shape[0]}) 無法使用 n_neighbors={N_NEIGHBORS} 進行訓練。")
         return None, 0.0
 
-    print(f"Training KNN model with n_neighbors={n_neighbors}...")
-    print(f"Feature shape: {features.shape}, Label shape: {labels.shape}")
+    print(f"使用固定的 n_neighbors={N_NEIGHBORS} 訓練 KNN 模型...")
+    print(f"特徵維度: {features.shape}, 標籤維度: {labels.shape}")
 
-    # Stratify might be useful if commands are imbalanced
     try:
         X_train, X_test, y_train, y_test = train_test_split(
             features, labels, test_size=0.2, random_state=42, stratify=labels
         )
-    except ValueError: # Handle cases where stratification isn't possible (e.g., only one class)
-         print("Warning: Could not stratify split, using regular split.")
+    except ValueError:
+         print("警告: 無法進行分層抽樣，使用普通抽樣。")
          X_train, X_test, y_train, y_test = train_test_split(
             features, labels, test_size=0.2, random_state=42
         )
 
-
-    print(f"Train set size: {len(X_train)}, Test set size: {len(X_test)}")
+    print(f"訓練集大小: {len(X_train)}, 測試集大小: {len(X_test)}")
     if len(X_train) == 0 or len(X_test) == 0:
-         print("Error: Training or testing set is empty after split.")
+         print("錯誤: 訓練集或測試集在分割後為空。")
          return None, 0.0
 
-
-    model = KNeighborsClassifier(n_neighbors=n_neighbors)
+    # 直接使用 N_NEIGHBORS
+    model = KNeighborsClassifier(n_neighbors=N_NEIGHBORS)
     model.fit(X_train, y_train)
 
-    # Evaluate accuracy
     y_pred = model.predict(X_test)
     accuracy = accuracy_score(y_test, y_pred)
-    print(f"Model training complete. Test Accuracy: {accuracy:.4f}")
+    print(f"模型訓練完成。測試準確率: {accuracy:.4f}")
 
     return model, accuracy
+
 
 def save_model(model, filename):
     """Saves the trained model to a pickle file."""
@@ -117,40 +127,28 @@ def save_model(model, filename):
         print(f"Error saving model: {e}")
 
 def main():
-    parser = argparse.ArgumentParser(description="Train Pingpong KNN model.")
+    parser = argparse.ArgumentParser(description="訓練乒乓球 KNN 模型。")
     parser.add_argument("--data_folder", type=str, required=True,
-                        help="Path to the folder containing game data pickle files (e.g., ./pingpong_data_1P).")
+                        help="包含遊戲數據 pickle 檔案的資料夾路徑 (例如, ./ml/pingpong_data_1P)。")
     parser.add_argument("--side", type=str, required=True, choices=['1P', '2P'],
-                        help="Which side to train the model for (1P or 2P).")
+                        help="為哪個玩家訓練模型 (1P 或 2P)。")
     parser.add_argument("--output_model", type=str, required=True,
-                        help="Filename for the trained model (e.g., model_P1_YourStudentID.pickle).")
-    parser.add_argument("--neighbors", type=int, default=5,
-                        help="Number of neighbors for KNN (default: 5).")
+                        help="訓練好的模型檔案名稱 (例如, ./ml/model_P1_YourStudentID.pickle)。")
+    # 移除 neighbors 參數解析
+    # parser.add_argument("--neighbors", type=int, default=5, help="KNN 的鄰居數量 (預設: 5)。")
     args = parser.parse_args()
 
-    # --- 1. Load Data ---
     all_game_data = load_data_from_pickle(args.data_folder)
-    if not all_game_data:
-        print("Exiting due to data loading issues.")
-        return
+    if not all_game_data: return
 
-    # --- 2. Preprocess Data ---
     features, labels = preprocess_data(all_game_data, args.side)
-    if features.size == 0:
-        print("Exiting due to preprocessing issues.")
-        return
+    if features.size == 0: return
 
-    # --- 3. Train Model ---
-    model, accuracy = train_model(features, labels, n_neighbors=args.neighbors)
+    # 調用修改後的 train_model，不再傳遞 neighbors 參數
+    model, accuracy = train_model(features, labels)
 
-    # --- 4. Save Model ---
     if model:
-        # Ensure the output model filename matches the side (optional check)
-        if f"_{args.side}_" not in args.output_model:
-             print(f"Warning: Output model name '{args.output_model}' might not match the trained side '{args.side}'.")
         save_model(model, args.output_model)
-    else:
-        print("Exiting because model training failed.")
 
 if __name__ == '__main__':
     main()
