@@ -2,9 +2,7 @@
 import pickle
 import numpy as np
 import os
-import random # For serving
-
-# 假設 predict_logic.py 在同一個 ml 資料夾下
+import random 
 from ml.predict_logic import predict_pingpong_landing
 
 class MLPlay:
@@ -19,7 +17,7 @@ class MLPlay:
 
         # --- Load Model ---
         # ** IMPORTANT: Replace "YourStudentID" with your actual student ID **
-        student_id = "YourStudentID"
+        student_id = "F74101115"
         model_filename = f"model_{self.side}_{student_id}.pickle"
         model_path = os.path.join(os.path.dirname(__file__), model_filename)
 
@@ -51,14 +49,12 @@ class MLPlay:
         # Check using scene_info["ball_served"] which comes from the game core
         if not scene_info["ball_served"]:
             command = "SERVE_TO_LEFT" if random.random() < 0.5 else "SERVE_TO_RIGHT"
-            # Do NOT set self.ball_served = True here, rely on the game state next frame
             self.previous_ball_position = None # Reset history on new serve
-            # print(f"[{self.side}] Ball not served. Serving: {command}")
             return command
 
         # --- Ball is in play ---
         # 3. Calculate predicted landing point (needed for fallback AND potentially as a feature)
-        predicted_center = predict_pingpong_landing(scene_info, self.previous_ball_position, self.side)
+        predicted_center = predict_pingpong_landing(scene_info, self.side)
         my_platform_x = scene_info[f"platform_{self.side}"][0]
         my_platform_center = my_platform_x + 40 / 2
 
@@ -66,19 +62,17 @@ class MLPlay:
         if self.model:
             # --- Prepare features for the model (MUST MATCH TRAINING) ---
             try:
-                # Calculate speed if previous position exists
-                ball_speed_x = 0
-                ball_speed_y = 0
-                if self.previous_ball_position:
-                    ball_speed_x = scene_info["ball"][0] - self.previous_ball_position[0]
-                    ball_speed_y = scene_info["ball"][1] - self.previous_ball_position[1]
+                # 直接使用 scene_info['ball_speed']
+                if "ball_speed" not in scene_info:
+                     raise ValueError("'ball_speed' not in scene_info") # 如果沒有速度信息則報錯
+                ball_speed_x, ball_speed_y = scene_info["ball_speed"]
 
                 # Use calculated prediction, or fallback if None
                 pred_center_feature = predicted_center if predicted_center is not None else my_platform_center
 
                 features = [
                     scene_info["ball"][0], scene_info["ball"][1],
-                    ball_speed_x, ball_speed_y,
+                    ball_speed_x, ball_speed_y,  # <--- 使用讀取的速度
                     scene_info["platform_1P"][0], scene_info["platform_2P"][0],
                     scene_info["blocker"][0] if scene_info.get("blocker") else -1,
                     pred_center_feature
@@ -88,7 +82,7 @@ class MLPlay:
                 # --- Predict command ---
                 prediction = self.model.predict(feature_vector)[0]
                 command_map = {0: "MOVE_LEFT", 1: "MOVE_RIGHT", 2: "NONE"}
-                command = command_map.get(prediction, "NONE") # Default to NONE if prediction is unexpected
+                command = command_map.get(prediction, "NONE")
                 # print(f"[{self.side}] Model prediction: {prediction} -> {command}")
 
             except Exception as e:
@@ -116,9 +110,6 @@ class MLPlay:
                 else: command = "NONE"
 
 
-        # 5. Update previous state for next frame
-        self.previous_ball_position = scene_info["ball"]
-
         # print(f"[{self.side}] Frame {scene_info['frame']}: Command={command}")
         return command
 
@@ -126,6 +117,5 @@ class MLPlay:
         """
         Reset the status.
         """
-        self.previous_ball_position = None
         self.ball_served = False # Reset internal flag, though game state is master
         # print(f"[{self.side}] Resetting AI state.")
